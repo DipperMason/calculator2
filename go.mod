@@ -1,4 +1,4 @@
-module github.com/DipperMason/grpc-calculator
+module github.com/DipperMason/calculator2
 
 go 1.21.0
 
