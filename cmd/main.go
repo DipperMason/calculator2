@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"sync"
@@ -29,51 +30,43 @@ func main() {
 	http.HandleFunc("/receive", receiveData)
 
 	fmt.Println("Receiver server listening on port 8080...")
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8081", nil)
 }
 
-// Инициализация базы данных SQLite
 func InitializeSQLiteDB() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", "my.db")
-	if err != nil {
-		log.Fatalf("Ошибка при открытии базы данных: %v\n", err)
-		return nil, err
-	}
-
-	// Создание таблицы expressions, если она не существует
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS expressions ( 
-        id INTEGER PRIMARY KEY, 
-        expression TEXT, 
-        responses TEXT, 
-        user TEXT 
-    )`)
-	if err != nil {
-		log.Fatalf("Ошибка при создании таблицы expressions: %v\n", err)
-		return nil, err
-	}
-
-	// Создание таблицы id_counter, если она не существует
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS id_counter ( 
-        id INTEGER 
-    )`)
-	if err != nil {
-		log.Fatalf("Ошибка при создании таблицы id_counter: %v\n", err)
-		return nil, err
-	}
-
-	// Вставка начального значения в таблицу id_counter, если она пуста
-	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM id_counter").Scan(&count)
-	if err != nil {
-		log.Fatalf("Ошибка при проверке таблицы id_counter: %v\n", err)
-		return nil, err
-	}
-	if count == 0 {
-		_, err = db.Exec("INSERT INTO id_counter (id) VALUES (0)")
+	dbPath := "sql/my.db"
+	_, err := os.Stat(dbPath)
+	if os.IsNotExist(err) {
+		file, err := os.Create(dbPath)
 		if err != nil {
-			log.Fatalf("Ошибка при вставке начального значения в таблицу id_counter: %v\n", err)
+			log.Fatalf("Error creating database file: %v\n", err)
 			return nil, err
 		}
+		file.Close()
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		log.Fatalf("Error opening database: %v\n", err)
+		return nil, err
+	}
+
+	// Создаем таблицы, если они еще не существуют
+	createTableQuery := `
+    CREATE TABLE IF NOT EXISTS id_counter (
+        id INTEGER PRIMARY KEY
+    );
+    CREATE TABLE IF NOT EXISTS expressions (
+        id INTEGER PRIMARY KEY,
+        expression TEXT,
+        responses TEXT,
+        user TEXT
+    );
+    `
+	_, err = db.Exec(createTableQuery)
+	if err != nil {
+		log.Fatalf("Error creating tables: %v\n", err)
+		return nil, err
 	}
 
 	return db, nil
@@ -107,6 +100,7 @@ func Start(expression string) {
 	}
 }
 
+// воркеры
 func start_count(infixExpression string) float64 {
 	postfixExpression := infixToPostfix(infixExpression)
 	//использование воркеров для параллельной обработки выражения
@@ -261,11 +255,17 @@ func plusResult(res float64, invalid bool) {
 		return
 	}
 
-	// Вставка данных в таблицу expressions
-	_, err = db.Exec("INSERT INTO expressions (id, expression, responses, user) VALUES (?, ?, ?, ?)",
-		id, "expression_placeholder", res,
+	// Проверка, что новое значение ID действительно увеличилось
+	var newId int
+	err = db.QueryRow("SELECT id FROM id_counter").Scan(&newId)
+	if err != nil {
+		log.Fatalf("Ошибка при чтении обновленного значения ID: %v\n", err)
+		return
+	}
 
-		"user_placeholder")
+	// Вставка данных в таблицу expressions с обновленным ID
+	_, err = db.Exec("INSERT INTO expressions (id, expression, responses, user) VALUES (?, ?, ?, ?)",
+		newId, "expression_placeholder", res, "user_placeholder")
 	if err != nil {
 		log.Fatalf("Ошибка при вставке данных в таблицу expressions: %v\n", err)
 		return
