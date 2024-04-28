@@ -1,0 +1,20 @@
+{{define "reg_page"}}
+
+{{template "head"}}
+<main>
+    <h1>   </h1>
+    <h1>    </h1>
+    <p>~~~~~~~~~~~~ </p>
+    
+    <form action="/e" method="POST">
+        <input type="text" name="user" placeholder="Your name">
+        <button type="submit2">Generate JWT token</button>
+    </form>
+    <h1>Your token:</h1>
+    <body>
+        <h1>{{.Variable}}</h1>
+    </body>
+    
+</main>
+
+{{end}}

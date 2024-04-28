@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Калькулятор</title>
+</head>
+<body>
+    <h1>Простой Калькулятор</h1>
+    <form id="calcForm">
+        <input type="text" id="expression" name="expression" placeholder="Введите математическое выражение" required>
+        <button type="submit">Посчитать</button>
+    </form>
+    <div id="result"></div>
+    <div id="answer"></div> <!-- Добавлено поле для вывода ответа -->
+
+    <script>
+        document.getElementById("calcForm").addEventListener("submit", function(event) {
+            event.preventDefault();
+            let expression = document.getElementById("expression").value;
+            fetch("/calculate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ expression: expression })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("result").innerText = "Результат: " + data.result;
+                document.getElementById("answer").innerText = "Ответ: " + data.result; // Вывод ответа
+            })
+            .catch(error => console.error("Ошибка:", error));
+        });
+    </script>
+</body>
+</html>
