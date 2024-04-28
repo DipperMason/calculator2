@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -28,19 +29,21 @@ var multiplicationTimeLimit time.Duration = 1
 var divisionTimeLimit time.Duration = 1
 var mu sync.Mutex
 
-type PageData struct {
-	Count1 time.Duration
-	Count2 time.Duration
-	Count3 time.Duration
-	Count4 time.Duration
-}
-
 // проверка текущего id
 func CheckID(db *sql.DB) int {
 	var id int
 	err := db.QueryRow("SELECT id FROM id_counter").Scan(&id)
 	if err != nil {
-		log.Fatalf("Ошибка при чтении значения ID: %v\n", err)
+		if err == sql.ErrNoRows {
+			// Если таблица пуста, инициализируем ID
+			_, err = db.Exec("INSERT INTO id_counter (id) VALUES (1)")
+			if err != nil {
+				log.Fatalf("Ошибка при инициализации ID: %v\n", err)
+			}
+			return 1
+		} else {
+			log.Fatalf("Ошибка при чтении значения ID: %v\n", err)
+		}
 	}
 	return id
 }
@@ -85,11 +88,41 @@ func main() {
 
 // инициализация базы данных SQLite
 func InitializeSQLiteDB() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", "my.db")
+	dbPath := "sql/my.db"
+	_, err := os.Stat(dbPath)
+	if os.IsNotExist(err) {
+		file, err := os.Create(dbPath)
+		if err != nil {
+			log.Fatalf("Error creating database file: %v\n", err)
+			return nil, err
+		}
+		file.Close()
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		log.Fatalf("Ошибка при открытии базы данных: %v\n", err)
+		log.Fatalf("Error opening database: %v\n", err)
 		return nil, err
 	}
+
+	// Создаем таблицы, если они еще не существуют
+	createTableQuery := `
+    CREATE TABLE IF NOT EXISTS id_counter (
+        id INTEGER PRIMARY KEY
+    );
+    CREATE TABLE IF NOT EXISTS expressions (
+        id INTEGER PRIMARY KEY,
+        expression TEXT,
+        responses TEXT,
+        user TEXT
+    );
+    `
+	_, err = db.Exec(createTableQuery)
+	if err != nil {
+		log.Fatalf("Error creating tables: %v\n", err)
+		return nil, err
+	}
+
 	return db, nil
 }
 
@@ -113,12 +146,12 @@ func reg_page(w http.ResponseWriter, r *http.Request) {
 
 // страница добавления нового выражения с общим списком из бд (посчитать выражение)
 func AddPage(w http.ResponseWriter, r *http.Request, db *sql.DB, currentUser string) {
-	tmpl, err := template.ParseFiles("html/calculate.html", "head/head.html")
+	tmpl, err := template.ParseFiles("html/calculate.html", "html/head.html")
 	if err != nil {
 		log.Fatalf("Ошибка при инициализации: %v\n", err)
 	}
 
-	rows, err := db.Query("SELECT expression FROM your_table WHERE user = ?", currentUser)
+	rows, err := db.Query("SELECT expression FROM expressions WHERE user = ?", currentUser)
 	if err != nil {
 		log.Fatalf("Ошибка при выполнении запроса: %v\n", err)
 	}
@@ -150,7 +183,7 @@ func AuthPage(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		log.Fatalf("Ошибка при инициализации: %v\n", err)
 	}
 
-	rows, err := db.Query("SELECT expression FROM your_table")
+	rows, err := db.Query("SELECT expression FROM expressions")
 	if err != nil {
 		log.Fatalf("Ошибка при выполнении запроса: %v\n", err)
 	}
@@ -199,7 +232,7 @@ func FormHandlerReg(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	fmt.Println("Token string:", TokenString)
 	WriteToDatabase(TokenString, "", db)
 
-	tmpl, err := template.ParseFiles("html/registration.html", "html/head.html")
+	tmpl, err := template.ParseFiles("html/registration_jwt.html", "html/head.html")
 	if err != nil {
 		log.Fatalf("Ошибка при инициализации: %v\n", err)
 	}
